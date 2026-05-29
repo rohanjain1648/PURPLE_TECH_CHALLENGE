@@ -1,0 +1,15 @@
+[run]
+omit =
+    # Hardware-dependent integration code — require real GPU+video to exercise
+    pipeline/detect.py
+    pipeline/simulate.py
+    pipeline/tracker.py
+    */conftest.py
+    */__init__.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+    except ImportError
