@@ -1,0 +1,77 @@
+version: "3.9"
+
+services:
+  # -----------------------------------------------------------------------
+  # PostgreSQL — primary datastore
+  # -----------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: store_intelligence
+      POSTGRES_USER: si_user
+      POSTGRES_PASSWORD: si_pass
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U si_user -d store_intelligence"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # -----------------------------------------------------------------------
+  # Store Intelligence API
+  # -----------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://si_user:si_pass@db:5432/store_intelligence"
+      DEBUG: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # -----------------------------------------------------------------------
+  # Detection pipeline / simulator
+  # Run the simulator out-of-the-box; swap CMD for real clips (see README)
+  # -----------------------------------------------------------------------
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile.pipeline
+    restart: "no"
+    environment:
+      API_URL: "http://api:8000"
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - ./data/clips:/app/data/clips:ro
+
+  # -----------------------------------------------------------------------
+  # Live terminal dashboard (bonus Part E)
+  # -----------------------------------------------------------------------
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    # Attach to your terminal:  docker compose attach dashboard
+    stdin_open: true
+    tty: true
+
+volumes:
+  pg_data:

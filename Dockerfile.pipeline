@@ -1,0 +1,26 @@
+# Pipeline image — CPU-only by default.
+# For GPU: change base to nvidia/cuda:12.1.0-runtime-ubuntu22.04
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 libsm6 libxrender1 libxext6 libgl1 ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-pipeline.txt .
+RUN pip install --no-cache-dir -r requirements-pipeline.txt
+
+COPY pipeline/ ./pipeline/
+COPY data/ ./data/
+
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Default: run the simulator (swap CMD to detect.py for real clips)
+CMD ["python", "-m", "pipeline.simulate", \
+     "--store-id", "STORE_BLR_002", \
+     "--layout", "data/store_layout.json", \
+     "--api-url", "http://api:8000", \
+     "--visitors", "200", \
+     "--speed", "30"]
