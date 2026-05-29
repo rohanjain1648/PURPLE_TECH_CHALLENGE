@@ -1,0 +1,139 @@
+{
+  "stores": [
+    {
+      "store_id": "STORE_BLR_002",
+      "name": "Apex Retail Bangalore South",
+      "city": "Bangalore",
+      "open_hours": { "open": "10:00", "close": "22:00" },
+      "cameras": [
+        { "camera_id": "CAM_ENTRY_01", "type": "entry",   "description": "Entry/exit threshold" },
+        { "camera_id": "CAM_FLOOR_01", "type": "floor",   "description": "Main floor zone coverage" },
+        { "camera_id": "CAM_BILLING_01", "type": "billing", "description": "Billing counter area" }
+      ],
+      "zones": [
+        {
+          "zone_id": "ENTRY",
+          "name": "Store Entry",
+          "camera_id": "CAM_ENTRY_01",
+          "sku_zone": null,
+          "polygon": [[0,400],[1920,400],[1920,1080],[0,1080]],
+          "entry_line": { "p1": [0,540], "p2": [1920,540], "inbound_direction": "up" }
+        },
+        {
+          "zone_id": "SKINCARE",
+          "name": "Skincare Zone",
+          "camera_id": "CAM_FLOOR_01",
+          "sku_zone": "MOISTURISER",
+          "polygon": [[0,0],[640,0],[640,540],[0,540]]
+        },
+        {
+          "zone_id": "HAIRCARE",
+          "name": "Haircare Zone",
+          "camera_id": "CAM_FLOOR_01",
+          "sku_zone": "SHAMPOO",
+          "polygon": [[640,0],[1280,0],[1280,540],[640,540]]
+        },
+        {
+          "zone_id": "MAKEUP",
+          "name": "Makeup Zone",
+          "camera_id": "CAM_FLOOR_01",
+          "sku_zone": "FOUNDATION",
+          "polygon": [[1280,0],[1920,0],[1920,540],[1280,540]]
+        },
+        {
+          "zone_id": "FRAGRANCE",
+          "name": "Fragrance Zone",
+          "camera_id": "CAM_FLOOR_01",
+          "sku_zone": "PERFUME",
+          "polygon": [[0,540],[960,540],[960,1080],[0,1080]]
+        },
+        {
+          "zone_id": "WELLNESS",
+          "name": "Wellness Zone",
+          "camera_id": "CAM_FLOOR_01",
+          "sku_zone": "SUPPLEMENTS",
+          "polygon": [[960,540],[1920,540],[1920,1080],[960,1080]]
+        },
+        {
+          "zone_id": "BILLING",
+          "name": "Billing Counter",
+          "camera_id": "CAM_BILLING_01",
+          "sku_zone": null,
+          "is_billing": true,
+          "polygon": [[0,0],[1920,0],[1920,1080],[0,1080]]
+        }
+      ],
+      "camera_overlaps": [
+        {
+          "camera1": "CAM_ENTRY_01",
+          "camera2": "CAM_FLOOR_01",
+          "zone_id": "ENTRY_OVERLAP",
+          "polygon": [[0,900],[1920,900],[1920,1080],[0,1080]]
+        }
+      ],
+      "staff_uniform_colors": {
+        "description": "Staff wear royal-blue polo shirts",
+        "ranges": [
+          { "lower_hsv": [100,100,50],  "upper_hsv": [130,255,255] }
+        ]
+      }
+    },
+    {
+      "store_id": "STORE_MUM_005",
+      "name": "Apex Retail Mumbai West",
+      "city": "Mumbai",
+      "open_hours": { "open": "11:00", "close": "22:00" },
+      "cameras": [
+        { "camera_id": "CAM_ENTRY_01", "type": "entry",   "description": "Entry/exit threshold" },
+        { "camera_id": "CAM_FLOOR_01", "type": "floor",   "description": "Main floor" },
+        { "camera_id": "CAM_BILLING_01", "type": "billing", "description": "Billing area" }
+      ],
+      "zones": [
+        {
+          "zone_id": "ENTRY",
+          "name": "Store Entry",
+          "camera_id": "CAM_ENTRY_01",
+          "sku_zone": null,
+          "polygon": [[0,400],[1920,400],[1920,1080],[0,1080]],
+          "entry_line": { "p1": [0,540], "p2": [1920,540], "inbound_direction": "up" }
+        },
+        {
+          "zone_id": "SKINCARE",
+          "name": "Skincare",
+          "camera_id": "CAM_FLOOR_01",
+          "sku_zone": "MOISTURISER",
+          "polygon": [[0,0],[960,0],[960,540],[0,540]]
+        },
+        {
+          "zone_id": "MAKEUP",
+          "name": "Makeup",
+          "camera_id": "CAM_FLOOR_01",
+          "sku_zone": "FOUNDATION",
+          "polygon": [[960,0],[1920,0],[1920,540],[960,540]]
+        },
+        {
+          "zone_id": "HAIRCARE",
+          "name": "Haircare",
+          "camera_id": "CAM_FLOOR_01",
+          "sku_zone": "SHAMPOO",
+          "polygon": [[0,540],[960,540],[960,1080],[0,1080]]
+        },
+        {
+          "zone_id": "BILLING",
+          "name": "Billing Counter",
+          "camera_id": "CAM_BILLING_01",
+          "sku_zone": null,
+          "is_billing": true,
+          "polygon": [[0,0],[1920,0],[1920,1080],[0,1080]]
+        }
+      ],
+      "camera_overlaps": [],
+      "staff_uniform_colors": {
+        "description": "Staff wear dark-green polo shirts",
+        "ranges": [
+          { "lower_hsv": [40,80,40], "upper_hsv": [80,255,200] }
+        ]
+      }
+    }
+  ]
+}
