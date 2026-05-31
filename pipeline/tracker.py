@@ -212,12 +212,14 @@ class StoreTracker:
                        zone_id=new_zone.zone_id, sku_zone=new_zone.sku_zone)
 
             if new_zone.is_billing:
-                # Always emit BILLING_QUEUE_JOIN. queue_depth=0 means the visitor
-                # approached an empty counter. This sets session.billing_entry_time,
-                # which is the POS correlation anchor — without it conversion is never counted.
-                self._emit("BILLING_QUEUE_JOIN", state, now, conf,
-                           zone_id=new_zone.zone_id, queue_depth=queue_depth + 1)
-                state.queue_joined = True
+                # Emit BILLING_QUEUE_JOIN only when a queue already exists (spec: queue_depth > 0).
+                # POS correlation uses ZONE_ENTER for the BILLING zone as the timing anchor —
+                # ingestion.py sets billing_entry_time on any BILLING ZONE_ENTER, so visitors
+                # at empty counters are still eligible for conversion tracking.
+                if queue_depth > 0:
+                    self._emit("BILLING_QUEUE_JOIN", state, now, conf,
+                               zone_id=new_zone.zone_id, queue_depth=queue_depth + 1)
+                    state.queue_joined = True
                 self._billing_queue.append(state.track_id)
 
     def _handle_dwell(self, state: TrackState, now: datetime, conf: float) -> None:

@@ -141,15 +141,15 @@ def _simulate_visitor_session(
                 event_type="ZONE_ENTER", timestamp=now, zone_id="BILLING",
                 confidence=random.uniform(0.75, 0.98),
             ))
-            # Always emit BILLING_QUEUE_JOIN regardless of queue depth.
-            # queue_depth=0 means the visitor approached an empty counter.
-            # This is required for billing_entry_time to be set on the session,
-            # which is the anchor point for POS correlation → conversion tracking.
-            emitter.emit(make_event(
-                store_id=store_id, camera_id=camera_id_billing, visitor_id=vid,
-                event_type="BILLING_QUEUE_JOIN", timestamp=now, zone_id="BILLING",
-                queue_depth=queue_depth, confidence=random.uniform(0.75, 0.98),
-            ))
+            # Emit BILLING_QUEUE_JOIN only when a queue exists (queue_depth > 0),
+            # per the event schema spec. POS correlation uses ZONE_ENTER for the
+            # BILLING zone as the timing anchor — not BILLING_QUEUE_JOIN.
+            if queue_depth > 0:
+                emitter.emit(make_event(
+                    store_id=store_id, camera_id=camera_id_billing, visitor_id=vid,
+                    event_type="BILLING_QUEUE_JOIN", timestamp=now, zone_id="BILLING",
+                    queue_depth=queue_depth, confidence=random.uniform(0.75, 0.98),
+                ))
 
             billing_wait = random.gauss(120, 60)
             # Simulate abandonment (20 % if queue > 2)

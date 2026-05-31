@@ -25,7 +25,7 @@ logger = structlog.get_logger(__name__)
 
 
 async def get_store_metrics(store_id: str, db: AsyncSession, target_date: Optional[date] = None) -> StoreMetrics:
-    today = target_date or date.today()
+    today = target_date or datetime.now(tz=timezone.utc).date()
     day_start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
     day_end = datetime(today.year, today.month, today.day, 23, 59, 59, tzinfo=timezone.utc)
 
@@ -61,7 +61,7 @@ async def get_store_metrics(store_id: str, db: AsyncSession, target_date: Option
 
 
 async def get_heatmap(store_id: str, db: AsyncSession, target_date: Optional[date] = None) -> HeatmapResponse:
-    today = target_date or date.today()
+    today = target_date or datetime.now(tz=timezone.utc).date()
     day_start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
     day_end = datetime(today.year, today.month, today.day, 23, 59, 59, tzinfo=timezone.utc)
 
@@ -203,7 +203,8 @@ async def _compute_abandonment_rate(store_id: str, start: datetime, end: datetim
     stmt_abandoned = select(func.count()).where(
         SessionORM.store_id == store_id,
         SessionORM.entry_time.between(start, end),
-        SessionORM.queue_abandoned == True,  # noqa: E712
+        SessionORM.queue_abandoned == True,   # noqa: E712
+        SessionORM.converted == False,         # noqa: E712  exclude visitors who ultimately paid
     )
     joined = (await db.execute(stmt_joined)).scalar_one() or 0
     abandoned = (await db.execute(stmt_abandoned)).scalar_one() or 0

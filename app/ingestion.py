@@ -226,10 +226,18 @@ async def _apply_event_to_session(evt: EventORM, db: AsyncSession) -> None:
                 session.zones_visited = zones
             if etype == EventType.ZONE_DWELL.value:
                 session.total_dwell_ms = (session.total_dwell_ms or 0) + evt.dwell_ms
+            # Spec: "A visitor who was in the billing zone in the 5-minute window before
+            # a transaction timestamp counts as converted." Set billing_entry_time on first
+            # BILLING zone entry so POS correlation works even when queue_depth == 0
+            # (i.e., no BILLING_QUEUE_JOIN was emitted because the counter was empty).
+            if etype == EventType.ZONE_ENTER.value and "BILLING" in evt.zone_id.upper():
+                if session.billing_entry_time is None:
+                    session.billing_entry_time = evt.timestamp
 
     elif etype == EventType.BILLING_QUEUE_JOIN.value:
         if session:
-            session.billing_entry_time = evt.timestamp
+            if session.billing_entry_time is None:
+                session.billing_entry_time = evt.timestamp
             session.queue_joined = True
 
     elif etype == EventType.BILLING_QUEUE_ABANDON.value:

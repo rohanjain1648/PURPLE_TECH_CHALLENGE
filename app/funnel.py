@@ -23,7 +23,7 @@ logger = structlog.get_logger(__name__)
 async def get_funnel(
     store_id: str, db: AsyncSession, target_date: Optional[date] = None
 ) -> FunnelResponse:
-    today = target_date or date.today()
+    today = target_date or datetime.now(tz=timezone.utc).date()
     day_start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
     day_end = datetime(today.year, today.month, today.day, 23, 59, 59, tzinfo=timezone.utc)
 

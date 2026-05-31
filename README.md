@@ -376,7 +376,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The simulator starts immediately and populates the API with realistic visitor events for `STORE_PRP_001`.
+The simulator starts immediately and populates the API with realistic visitor events for `STORE_BLR_002` (Brigade Road, Bangalore).
 
 ```bash
 # 4. (Optional) Run the YOLOv8 detection pipeline on the real CCTV clips
@@ -395,6 +395,7 @@ docker compose attach dashboard
 **Verify the API is live:**
 ```bash
 curl http://localhost:8000/health
+curl "http://localhost:8000/stores/STORE_BLR_002/metrics"
 curl "http://localhost:8000/stores/STORE_PRP_001/metrics?date=2026-04-10"
 ```
 
