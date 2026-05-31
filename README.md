@@ -121,37 +121,186 @@ This platform introduces several edge-native optimizations designed to eliminate
 
 ```mermaid
 flowchart TB
-    subgraph Edge_Node ["Edge CV Node (pipeline/)"]
-        Video[Raw CCTV Feeds] --> FrameSkip[Frame Skip 3x]
-        FrameSkip --> YOLOv8[YOLOv8s Person Detector]
-        YOLOv8 --> ByteTrack[ByteTrack Multi-Object Tracker]
-        ByteTrack --> ZoneMap[Shapely Zone Mapper]
-        ByteTrack --> StaffFilt[HSV & Heuristic Staff Filter]
-        ByteTrack --> LABReID[LAB Color space Re-ID]
-        
-        ZoneMap & StaffFilt & LABReID --> EventGen[StoreEvent Generator]
-        EventGen --> BatchEmitter[Batch Event Emitter (emit.py)]
+    subgraph Edge_Node ["Edge CV Node — pipeline/"]
+        Video["Raw CCTV Feeds"] --> FrameSkip["Frame Skip 3x — 5fps effective"]
+        FrameSkip --> YOLOv8["YOLOv8s Person Detector"]
+        YOLOv8 --> ByteTrack["ByteTrack Multi-Object Tracker"]
+        ByteTrack --> ZoneMap["Shapely Zone Mapper"]
+        ByteTrack --> StaffFilt["HSV + Contextual Staff Filter"]
+        ByteTrack --> LABReID["LAB Color Re-ID Gallery"]
+
+        ZoneMap & StaffFilt & LABReID --> EventGen["StoreEvent Generator"]
+        EventGen --> BatchEmitter["Batch Event Emitter — emit.py"]
     end
 
-    subgraph API_Gateway ["Intelligence API Gateway (app/)"]
-        BatchEmitter -->|POST /events/ingest| FastAPI[FastAPI REST App]
-        POS[POS Terminals] -->|POST /pos/ingest| FastAPI
-        
-        FastAPI --> IngestEngine[Idempotency & Ingestion Engine]
-        IngestEngine --> StateMachine[Session State Machine]
-        StateMachine --> db[(PostgreSQL DB)]
-        
-        AnomalyLoop[Async Anomaly Monitor (30s)] <-->|Scan Sessions| db
-        AnomalyLoop -->|Raise Alerts| db
+    subgraph API_Gateway ["Intelligence API Gateway — app/"]
+        BatchEmitter -->|"POST /events/ingest"| FastAPI["FastAPI REST App"]
+        POS["POS Terminals"] -->|"POST /pos/ingest"| FastAPI
+
+        FastAPI --> IngestEngine["Idempotency + Ingestion Engine"]
+        IngestEngine --> StateMachine["Session State Machine"]
+        StateMachine --> db[("PostgreSQL DB")]
+
+        AnomalyLoop["Async Anomaly Monitor — 30s cycle"] <-->|"Scan Sessions"| db
+        AnomalyLoop -->|"Upsert Alerts"| db
     end
 
-    subgraph Clients ["Visualization UI (dashboard/)"]
-        FastAPI -->|JSON Endpoints| TUI[Live Terminal Dashboard]
+    subgraph Clients ["Visualization — dashboard/"]
+        FastAPI -->|"JSON — 2s poll"| TUI["Rich Terminal Dashboard"]
     end
-    
+
     style Edge_Node fill:#1a1c23,stroke:#3b82f6,stroke-width:2px,color:#fff
     style API_Gateway fill:#111827,stroke:#8b5cf6,stroke-width:2px,color:#fff
     style Clients fill:#0f172a,stroke:#ec4899,stroke-width:2px,color:#fff
+```
+
+---
+
+## 6a. Detection Pipeline — Frame to Event
+
+```mermaid
+flowchart LR
+    A["📹 Video Frame\n1080p 15fps"] --> B["Frame Skip\nevery 3rd frame\n→ 5fps"]
+    B --> C["YOLOv8s\nPerson Detection\nconf ≥ 0.35"]
+    C --> D{"Track\nExists?"}
+
+    D -->|"New Track"| E["LAB Re-ID\n96-dim histogram\ncosine match"]
+    D -->|"Known Track"| F["Update Centroid\ncx, cy"]
+
+    E -->|"Similarity ≥ 0.82\nwithin 5 min"| G["REENTRY\nSame visitor_id"]
+    E -->|"No match"| H["New visitor_id\nVIS_xxxxxx"]
+
+    G & H & F --> I["Staff Detection\nHSV uniform check\n+ zone traversal"]
+    I -->|"is_staff = true"| J["Suppress from\ncustomer metrics"]
+    I -->|"is_staff = false"| K["Zone Mapper\nShapely polygon\ncontains point"]
+
+    K --> L{"Zone\nChange?"}
+    L -->|"Entry line cross"| M["ENTRY / EXIT\nevent"]
+    L -->|"New zone"| N["ZONE_ENTER\nZONE_EXIT\nevent"]
+    L -->|"Same zone 30s"| O["ZONE_DWELL\n30s interval"]
+    L -->|"BILLING zone"| P{"Queue\ndepth > 0?"}
+    P -->|"Yes"| Q["BILLING_QUEUE_JOIN\nqueue_depth in metadata"]
+    P -->|"No"| R["ZONE_ENTER BILLING\nbilling_entry_time set\nfor POS correlation"]
+
+    M & N & O & Q & R --> S["EventEmitter\nbuffer → batch 500\nPOST /events/ingest"]
+
+    style A fill:#1e3a5f,color:#fff
+    style G fill:#7c3aed,color:#fff
+    style J fill:#374151,color:#aaa
+    style Q fill:#065f46,color:#fff
+    style S fill:#1e3a5f,color:#fff
+```
+
+---
+
+## 6b. Session State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> NoSession : visitor first seen
+
+    NoSession --> SessionOpen : ENTRY event\nassign visitor_id\nis_reentry checked
+
+    SessionOpen --> SessionOpen : ZONE_ENTER\nZONE_EXIT\nZONE_DWELL\nupdate zones_visited\ntotal_dwell_ms
+
+    SessionOpen --> InBilling : ZONE_ENTER BILLING\nset billing_entry_time
+
+    InBilling --> InBilling : ZONE_DWELL BILLING
+
+    InBilling --> QueueJoined : BILLING_QUEUE_JOIN\nqueue_depth > 0\nset queue_joined = true
+
+    QueueJoined --> Abandoned : BILLING_QUEUE_ABANDON\nqueue_abandoned = true\nbilling_entry_time preserved
+
+    InBilling --> SessionOpen : ZONE_EXIT BILLING\n(left billing area)
+
+    QueueJoined --> SessionOpen : ZONE_EXIT BILLING
+
+    InBilling --> Converted : POS transaction\nwithin 5-min window\nconverted = true
+
+    QueueJoined --> Converted : POS transaction\nwithin 5-min window\nconverted = true
+
+    Abandoned --> Converted : POS transaction\nstill within window\nbilling_entry_time intact
+
+    SessionOpen --> SessionClosed : EXIT event\nset exit_time
+
+    InBilling --> SessionClosed : EXIT event
+    QueueJoined --> SessionClosed : EXIT event
+    Converted --> SessionClosed : EXIT event
+    Abandoned --> SessionClosed : EXIT event
+
+    SessionClosed --> [*]
+
+    note right of Converted : counted in\nconversion_rate
+    note right of Abandoned : counted in\nabandonment_rate\nonly if NOT converted
+```
+
+---
+
+## 6c. Re-ID and Re-entry Detection
+
+```mermaid
+flowchart TD
+    A["New Track Detected\ntrack_id = 42"] --> B["Extract LAB Histogram\n96-dim unit-norm vector\nfrom bounding box crop"]
+
+    B --> C["Search Re-ID Gallery\ncosine similarity vs\nexited descriptors"]
+
+    C --> D{"Best match\nScore ≥ 0.82\nAge ≤ 300s?"}
+
+    D -->|"Yes — REENTRY"| E["Reuse visitor_id\nVIS_c8a2f1\nemit REENTRY event\nis_reentry = true on session"]
+
+    D -->|"No match"| F["Assign new visitor_id\nVIS_xxxxxx\nemit ENTRY event"]
+
+    G["Track Lost / EXIT crossed"] --> H["retire_track\nStore descriptor + timestamp\nin gallery OrderedDict"]
+
+    H --> I{"Gallery TTL\n> 300s?"}
+    I -->|"Yes"| J["Evict stale entry\n_evict_expired"]
+    I -->|"No"| K["Hold in gallery\nwaiting for potential re-match"]
+
+    L["Cross-Camera Match\nCAM_ENTRY_01 → CAM_FLOOR_01"] --> M["Shared ReIDManager\nacross all cameras\nfor same store"]
+    M --> C
+
+    style E fill:#7c3aed,color:#fff
+    style F fill:#065f46,color:#fff
+    style J fill:#7f1d1d,color:#fff
+```
+
+---
+
+## 6d. Anomaly Detection — Background Loop
+
+```mermaid
+flowchart TD
+    T["asyncio.Task\nevery 30 seconds"] --> S["Get all store_ids\nfrom events table"]
+
+    S --> Loop["For each store_id"]
+
+    Loop --> A1["BILLING_QUEUE_SPIKE\nCount open billing sessions\nno exit, not abandoned"]
+    A1 --> A1a{"depth ≥ 10?"}
+    A1a -->|"Yes"| A1b["Upsert CRITICAL\nDeploy staff immediately"]
+    A1a -->|"depth ≥ 5"| A1c["Upsert WARN\nOpen another counter"]
+    A1a -->|"No"| A1d["Resolve if active"]
+
+    Loop --> A2["CONVERSION_DROP\nToday rate vs 7-day avg\nmin 5 sessions needed"]
+    A2 --> A2a{"Drop ≥ 20%?"}
+    A2a -->|"≥ 35%"| A2b["Upsert CRITICAL"]
+    A2a -->|"≥ 20%"| A2c["Upsert WARN"]
+
+    Loop --> A3["DEAD_ZONE\nZones active in last 7d\nbut silent in last 30 min"]
+    A3 --> A3a{"Any dead\nzones?"}
+    A3a -->|"Yes"| A3b["Upsert INFO per zone\nCheck signage + camera"]
+
+    Loop --> A4["HIGH_ENTRY_RATE\nlast-10-min entries vs\nhourly baseline / 5"]
+    A4 --> A4a{"ratio ≥ 3x?"}
+    A4a -->|"≥ 5x"| A4b["Upsert CRITICAL\nExtreme surge"]
+    A4a -->|"≥ 3x"| A4c["Upsert WARN\nFootfall surge — prep counters"]
+    A4a -->|"No"| A4d["Resolve if active"]
+
+    A1b & A1c & A2b & A2c & A3b & A4b & A4c --> DB[("anomalies table\nseverity + suggested_action\nauto-resolves next cycle")]
+
+    style T fill:#1e3a5f,color:#fff
+    style DB fill:#111827,color:#fff
+    style A1b fill:#7f1d1d,color:#fff
+    style A4b fill:#7f1d1d,color:#fff
 ```
 
 ---
