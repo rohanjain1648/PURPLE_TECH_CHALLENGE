@@ -58,6 +58,32 @@ Option B — nested metadata, matching the spec verbatim. Two reasons I overrode
 
 ---
 
+## Decision 4 — POS Correlation: Generic Format vs Store-Specific CSV
+
+### Context
+
+The Brigade Road store (ST1008) provides transaction data in a line-item CSV format — one row per product SKU, not per invoice. A single transaction (`invoice_number = ML0426KAP0001358`) may have 6+ rows. The `total_amount` column is per-line-item, not per-basket.
+
+### Options Considered
+
+**Option A — Generic CSV loader:** Require all POS CSV inputs to use a standardised schema (`transaction_id`, `store_id`, `timestamp`, `basket_value_inr`). Simple, but every real-world store has a different format — this would block integration without ETL work.
+
+**Option B — Store-specific loader (chosen):** `pipeline/load_brigade_pos.py` understands the Brigade schema: groups by `invoice_number`, sums `total_amount` across line-items, excludes carry-bag items (amount ≤ ₹0.50), and converts IST timestamps to UTC before posting to `/pos/ingest`.
+
+**Option C — Streaming ETL pipeline:** Kafka/Flink ingestion that auto-adapts to schema variations. Correct at scale, but heavy infrastructure for a single-store evaluation.
+
+### What I Chose and Why
+
+Option B. The loader is ~60 lines and handles the specific quirks of the Brigade data:
+- Multi-line-item invoices aggregated to single basket values
+- IST (UTC+5:30) timestamps that must be normalised before correlation with UTC CCTV events
+- Return transactions (`invoice_type == "return"`) stored with negative basket values so they don't inflate conversion metrics
+- Zero-value GWP (gift-with-purchase) items excluded from basket totals
+
+**Brigade-specific observation from the data:** On 10-April-2026, Brigade Road (ST1008) processed ~18 unique invoices between 12:00–21:40. The peak transaction window was 17:00–20:00 (afternoon). The highest basket value was ₹14,448 (invoice ML0426KAP0001384, customer Nivya Sara, buying Round Lab + Bare Anatomy). Average basket = ~₹1,800. These patterns suggest the POS correlation window (currently 5 minutes) is appropriate for a store this size.
+
+---
+
 ## Decision 3 — API Architecture: Sync vs Async, PostgreSQL vs SQLite
 
 ### Options Considered

@@ -36,8 +36,15 @@ coverage.xml
 .vscode/
 .idea/
 
-# Clips (not to be redistributed per licence)
+# CCTV footage — Challenge use only, must not be redistributed (licence restriction)
+# Organizers already have these; do NOT push to any repository.
+CCTV Footage/
 data/clips/
 
-# Generated event output
+# Generated event output and test artefacts
 events_*.jsonl
+test_*.jsonl
+*.jsonl
+
+# Sample frames extracted for analysis
+CCTV Footage/sample_frames/

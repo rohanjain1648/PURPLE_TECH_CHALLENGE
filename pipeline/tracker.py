@@ -62,6 +62,7 @@ class StoreTracker:
         fps: float,
         clip_start_time: datetime,
         current_billing_queue: "list[int]",  # shared mutable list across trackers
+        force_is_staff: bool = False,         # True for stockroom / back-office cameras
     ):
         self._store_id = store_id
         self._camera_id = camera_id
@@ -71,7 +72,8 @@ class StoreTracker:
         self._emitter = emitter
         self._fps = fps
         self._clip_start = clip_start_time
-        self._billing_queue = current_billing_queue  # track_ids currently in billing zone
+        self._billing_queue = current_billing_queue
+        self._force_is_staff = force_is_staff  # stockroom flag
 
         self._tracks: dict[int, TrackState] = {}
         self._seen_track_ids: set[int] = set()
@@ -111,9 +113,15 @@ class StoreTracker:
             )
 
             if is_new:
-                is_staff, s_conf = self._staff_detector.is_staff(
-                    track_id, frame, bbox, now
-                )
+                if self._force_is_staff:
+                    is_staff, s_conf = True, 1.0
+                else:
+                    is_staff, s_conf = self._staff_detector.is_staff(
+                        track_id, frame, bbox, now
+                    )
+                # Non-entry cameras have no crossing line: everyone is already
+                # inside the store so zone events emit immediately.
+                already_inside = not self._zone_mapper.has_entry_line
                 state = TrackState(
                     track_id=track_id,
                     visitor_id=visitor_id,
@@ -121,6 +129,7 @@ class StoreTracker:
                     staff_confidence=s_conf,
                     prev_cx=cx,
                     prev_cy=cy,
+                    entered_store=already_inside,
                 )
                 self._tracks[track_id] = state
                 self._seen_track_ids.add(track_id)
@@ -131,6 +140,10 @@ class StoreTracker:
             current_zone = self._zone_mapper.zone_at(cx, cy)
             if current_zone:
                 self._staff_detector.update_zone(track_id, current_zone.zone_id, now)
+                # Any zone flagged is_staff_zone overrides detection
+                if current_zone.is_staff_zone and not state.is_staff:
+                    state.is_staff = True
+                    state.staff_confidence = 0.95
                 # Refine staff detection contextually once we have zone history
                 if not state.is_staff:
                     ctx_staff = self._staff_detector.is_staff_by_context(track_id, now)
@@ -199,10 +212,12 @@ class StoreTracker:
                        zone_id=new_zone.zone_id, sku_zone=new_zone.sku_zone)
 
             if new_zone.is_billing:
-                if queue_depth > 0:
-                    self._emit("BILLING_QUEUE_JOIN", state, now, conf,
-                               zone_id=new_zone.zone_id, queue_depth=queue_depth + 1)
-                    state.queue_joined = True
+                # Always emit BILLING_QUEUE_JOIN. queue_depth=0 means the visitor
+                # approached an empty counter. This sets session.billing_entry_time,
+                # which is the POS correlation anchor — without it conversion is never counted.
+                self._emit("BILLING_QUEUE_JOIN", state, now, conf,
+                           zone_id=new_zone.zone_id, queue_depth=queue_depth + 1)
+                state.queue_joined = True
                 self._billing_queue.append(state.track_id)
 
     def _handle_dwell(self, state: TrackState, now: datetime, conf: float) -> None:

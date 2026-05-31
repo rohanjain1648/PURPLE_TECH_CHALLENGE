@@ -15,7 +15,7 @@ import uuid
 
 import pytest
 
-from app.anomalies import _upsert_anomaly, get_active_anomalies
+from app.anomalies import _detect_high_entry_rate, _upsert_anomaly, get_active_anomalies
 from tests.conftest import STORE_ID
 
 
@@ -102,3 +102,47 @@ async def test_anomaly_conversion_drop(db_session):
     cd = next((a for a in result.active_anomalies if a.anomaly_type == "CONVERSION_DROP"), None)
     assert cd is not None
     assert cd.metadata["drop_pct"] == pytest.approx(0.25)
+
+
+@pytest.mark.asyncio
+async def test_anomaly_high_entry_rate_upsert(db_session):
+    """HIGH_ENTRY_RATE anomaly can be inserted and queried with correct metadata."""
+    sid = f"STORE_HER_{uuid.uuid4().hex[:4]}"
+    await _upsert_anomaly(
+        sid, "HIGH_ENTRY_RATE", "WARN",
+        "Footfall surge: 30 entries in last 10 min (4.0× baseline of 7.5/10 min).",
+        {"recent_count": 30, "baseline_per_10min": 7.5, "ratio": 4.0},
+        db_session,
+    )
+    result = await get_active_anomalies(sid, db_session)
+    her = next((a for a in result.active_anomalies if a.anomaly_type == "HIGH_ENTRY_RATE"), None)
+    assert her is not None, "HIGH_ENTRY_RATE anomaly must surface"
+    assert her.severity == "WARN"
+    assert her.metadata["ratio"] == pytest.approx(4.0)
+    assert her.suggested_action, "suggested_action must not be empty"
+
+
+@pytest.mark.asyncio
+async def test_anomaly_high_entry_rate_critical(db_session):
+    """Ratio >= 5x triggers CRITICAL severity."""
+    sid = f"STORE_HER_C_{uuid.uuid4().hex[:4]}"
+    await _upsert_anomaly(
+        sid, "HIGH_ENTRY_RATE", "CRITICAL",
+        "Extreme footfall surge: 60 entries in last 10 min (8.0× baseline).",
+        {"recent_count": 60, "baseline_per_10min": 7.5, "ratio": 8.0},
+        db_session,
+    )
+    result = await get_active_anomalies(sid, db_session)
+    her = next((a for a in result.active_anomalies if a.anomaly_type == "HIGH_ENTRY_RATE"), None)
+    assert her is not None
+    assert her.severity == "CRITICAL"
+
+
+@pytest.mark.asyncio
+async def test_high_entry_rate_no_false_positive_on_empty_store(db_session):
+    """_detect_high_entry_rate must not raise on a store with no events."""
+    sid = f"STORE_HER_EMPTY_{uuid.uuid4().hex[:4]}"
+    # Should complete without error and produce no anomaly
+    await _detect_high_entry_rate(sid, db_session)
+    result = await get_active_anomalies(sid, db_session)
+    assert result.active_anomalies == []

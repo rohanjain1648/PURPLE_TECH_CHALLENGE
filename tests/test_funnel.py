@@ -105,3 +105,39 @@ async def test_funnel_response_has_date_and_store(client):
     assert body["store_id"] == STORE_ID
     assert "date" in body
     assert "computed_at" in body
+
+
+@pytest.mark.asyncio
+async def test_funnel_strictly_monotonic(client):
+    """
+    With a complete visitor journey (entry → zone → billing → purchase) the
+    funnel must be strictly non-increasing at every stage.
+    """
+    sid = f"STORE_MONO_{uuid.uuid4().hex[:4]}"
+    from tests.conftest import CAMERA_BILLING, CAMERA_FLOOR
+
+    # Seed 3 complete journeys and 1 entry-only visitor
+    for i in range(3):
+        vid = f"VIS_mono_{i}"
+        events = [
+            make_event_payload(visitor_id=vid, event_type="ENTRY"),
+            make_event_payload(visitor_id=vid, event_type="ZONE_ENTER",
+                               zone_id="SKINCARE", camera_id=CAMERA_FLOOR),
+            make_event_payload(visitor_id=vid, event_type="BILLING_QUEUE_JOIN",
+                               zone_id="BILLING", camera_id=CAMERA_BILLING, queue_depth=1),
+        ]
+        # Override store_id on each payload
+        for e in events:
+            e["store_id"] = sid
+        await client.post("/events/ingest", json=make_batch(*events))
+
+    # Entry-only visitor (no zone, no billing)
+    entry_only = make_event_payload(visitor_id="VIS_mono_entry_only", event_type="ENTRY")
+    entry_only["store_id"] = sid
+    await client.post("/events/ingest", json=make_batch(entry_only))
+
+    resp = await client.get(f"/stores/{sid}/funnel")
+    assert resp.status_code == 200
+    counts = [s["count"] for s in resp.json()["stages"]]
+    for prev, curr in zip(counts, counts[1:]):
+        assert prev >= curr, f"Funnel not monotonic: {counts}"

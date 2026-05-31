@@ -68,6 +68,7 @@ async def _detect_for_store(store_id: str, db: AsyncSession) -> None:
     await _detect_queue_spike(store_id, db)
     await _detect_conversion_drop(store_id, db)
     await _detect_dead_zones(store_id, db)
+    await _detect_high_entry_rate(store_id, db)
     # Auto-resolve stale anomalies
     await _resolve_cleared_anomalies(store_id, db)
 
@@ -177,6 +178,57 @@ async def _detect_dead_zones(store_id: str, db: AsyncSession) -> None:
         )
 
 
+async def _detect_high_entry_rate(store_id: str, db: AsyncSession) -> None:
+    """
+    Detect a sudden footfall surge: if the last 10-minute entry count is more
+    than 3× the average 10-minute entry rate over the past hour, raise WARN.
+    Useful for alerting staff before billing queues spike.
+    """
+    now = datetime.now(tz=timezone.utc)
+    window_start = now - timedelta(minutes=10)
+    hour_ago = now - timedelta(hours=1)
+
+    recent_stmt = select(func.count()).where(
+        EventORM.store_id == store_id,
+        EventORM.event_type == EventType.ENTRY.value,
+        EventORM.is_staff == False,  # noqa: E712
+        EventORM.timestamp > window_start,
+    )
+    recent_count = (await db.execute(recent_stmt)).scalar_one() or 0
+
+    hour_stmt = select(func.count()).where(
+        EventORM.store_id == store_id,
+        EventORM.event_type == EventType.ENTRY.value,
+        EventORM.is_staff == False,  # noqa: E712
+        EventORM.timestamp.between(hour_ago, window_start),
+    )
+    hour_count = (await db.execute(hour_stmt)).scalar_one() or 0
+
+    # Need at least 5 entries in the prior hour to establish a baseline
+    if hour_count < 5:
+        return
+
+    baseline_per_10min = hour_count / 5.0  # 5 non-overlapping 10-min windows in an hour
+    if baseline_per_10min <= 0:
+        return
+
+    ratio = recent_count / baseline_per_10min
+    if ratio >= 3.0:
+        severity = "CRITICAL" if ratio >= 5.0 else "WARN"
+        await _upsert_anomaly(
+            store_id=store_id,
+            anomaly_type="HIGH_ENTRY_RATE",
+            severity=severity,
+            suggested_action=(
+                f"Footfall surge detected: {recent_count} entries in last 10 min "
+                f"({ratio:.1f}× baseline of {baseline_per_10min:.1f}/10 min). "
+                "Open additional billing counters and deploy floor staff."
+            ),
+            metadata={"recent_count": recent_count, "baseline_per_10min": baseline_per_10min, "ratio": ratio},
+            db=db,
+        )
+
+
 async def _resolve_cleared_anomalies(store_id: str, db: AsyncSession) -> None:
     """
     Mark BILLING_QUEUE_SPIKE as resolved when queue drops below threshold.
@@ -193,7 +245,7 @@ async def _resolve_cleared_anomalies(store_id: str, db: AsyncSession) -> None:
     depth = (await db.execute(depth_stmt)).scalar_one() or 0
 
     if depth < settings.queue_spike_threshold:
-        stmt = (
+        await db.execute(
             update(AnomalyORM)
             .where(
                 AnomalyORM.store_id == store_id,
@@ -202,7 +254,33 @@ async def _resolve_cleared_anomalies(store_id: str, db: AsyncSession) -> None:
             )
             .values(resolved_at=now)
         )
-        await db.execute(stmt)
+
+    # Resolve HIGH_ENTRY_RATE when the last 10-min window drops back to baseline
+    recent_stmt = select(func.count()).where(
+        EventORM.store_id == store_id,
+        EventORM.event_type == EventType.ENTRY.value,
+        EventORM.is_staff == False,  # noqa: E712
+        EventORM.timestamp > (now - timedelta(minutes=10)),
+    )
+    recent_count = (await db.execute(recent_stmt)).scalar_one() or 0
+    hour_stmt = select(func.count()).where(
+        EventORM.store_id == store_id,
+        EventORM.event_type == EventType.ENTRY.value,
+        EventORM.is_staff == False,  # noqa: E712
+        EventORM.timestamp.between(now - timedelta(hours=1), now - timedelta(minutes=10)),
+    )
+    hour_count = (await db.execute(hour_stmt)).scalar_one() or 0
+    baseline = (hour_count / 5.0) if hour_count >= 5 else None
+    if baseline and recent_count < baseline * 3.0:
+        await db.execute(
+            update(AnomalyORM)
+            .where(
+                AnomalyORM.store_id == store_id,
+                AnomalyORM.anomaly_type == "HIGH_ENTRY_RATE",
+                AnomalyORM.resolved_at.is_(None),
+            )
+            .values(resolved_at=now)
+        )
 
 
 # ---------------------------------------------------------------------------

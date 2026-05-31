@@ -127,6 +127,50 @@ AI recommended PostgreSQL throughout. I agreed for production but added an `aios
 
 ---
 
+## Real-World POS Data Integration (Brigade Road)
+
+The Brigade Road Bangalore store (store_id `ST1008` in POS, mapped to `STORE_BLR_002` in this system) uses a line-item CSV export where each product SKU is a separate row sharing an `invoice_number`. The `pipeline/load_brigade_pos.py` script handles this format:
+
+1. **Aggregation:** Groups all rows by `invoice_number` → single transaction with summed `total_amount`.
+2. **Timezone normalisation:** Brigade timestamps are IST (UTC+5:30). The loader emits `+05:30` offset so the API's `_ensure_utc()` normalises correctly for POS correlation.
+3. **Return handling:** `invoice_type == "return"` rows produce negative basket values — these are stored but don't trigger conversion marking.
+4. **GWP exclusion:** Items with `total_amount ≤ ₹0.50` (carry bags, promotional GWP) are excluded from basket value.
+
+Usage:
+```bash
+python -m pipeline.load_brigade_pos \
+  --csv "Brigade_Bangalore_10_April_26.csv" \
+  --api-url http://localhost:8000 \
+  --store-id STORE_BLR_002
+```
+
+### Observed Data Characteristics
+
+From the 10-April-2026 Brigade CSV:
+- ~18 unique invoices, all from store ST1008
+- Time range: 12:15 → 21:40 IST (9.5-hour operating window)
+- Peak sales: 17:00–20:00 IST
+- Top categories by GMV: Makeup (Faces Canada dominant), Skincare (COSRX/DERMDOC), Hair Care
+- Average basket value: ~₹1,800; max: ~₹14,448 (multi-category basket)
+- 5 active salespersons (employee codes CL2063, CL2727, CL1997, CL2680, CL2541) — these are the staff the detection pipeline must exclude from visitor counts
+
+---
+
+## Anomaly Detection
+
+Four anomaly types are detected in the background loop every 30 seconds:
+
+| Anomaly Type | Trigger | Severity |
+|---|---|---|
+| BILLING_QUEUE_SPIKE | Queue depth ≥ 5 (WARN) or ≥ 10 (CRITICAL) | WARN / CRITICAL |
+| CONVERSION_DROP | Today's rate ≥ 20% below 7-day avg | WARN / CRITICAL |
+| DEAD_ZONE | No customer visits in any normally-active zone for 30 min | INFO |
+| HIGH_ENTRY_RATE | Last-10-min entry count ≥ 3× the per-10-min hourly baseline | WARN / CRITICAL |
+
+`HIGH_ENTRY_RATE` addresses a gap in the other three: queue spikes happen *after* a footfall surge; this anomaly fires *during* the surge, giving staff a 5–10 minute lead time to open billing counters before the queue forms.
+
+---
+
 ## Production Readiness Notes
 
 | Concern | Implementation |

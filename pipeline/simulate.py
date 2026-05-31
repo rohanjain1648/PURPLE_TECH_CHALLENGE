@@ -141,12 +141,15 @@ def _simulate_visitor_session(
                 event_type="ZONE_ENTER", timestamp=now, zone_id="BILLING",
                 confidence=random.uniform(0.75, 0.98),
             ))
-            if queue_depth > 0:
-                emitter.emit(make_event(
-                    store_id=store_id, camera_id=camera_id_billing, visitor_id=vid,
-                    event_type="BILLING_QUEUE_JOIN", timestamp=now, zone_id="BILLING",
-                    queue_depth=queue_depth, confidence=random.uniform(0.75, 0.98),
-                ))
+            # Always emit BILLING_QUEUE_JOIN regardless of queue depth.
+            # queue_depth=0 means the visitor approached an empty counter.
+            # This is required for billing_entry_time to be set on the session,
+            # which is the anchor point for POS correlation → conversion tracking.
+            emitter.emit(make_event(
+                store_id=store_id, camera_id=camera_id_billing, visitor_id=vid,
+                event_type="BILLING_QUEUE_JOIN", timestamp=now, zone_id="BILLING",
+                queue_depth=queue_depth, confidence=random.uniform(0.75, 0.98),
+            ))
 
             billing_wait = random.gauss(120, 60)
             # Simulate abandonment (20 % if queue > 2)
@@ -219,8 +222,10 @@ def run_simulation(
             if not is_staff and random.random() < _GROUP_ENTRY_PROB:
                 group_size = random.randint(2, 4)
 
-            for _ in range(group_size):
-                _simulate_visitor_session(
+            for g in range(group_size):
+                # Stable seed per visitor so re-entry gets the same visitor_id
+                visitor_seed = f"{seed}_{visitor_count}_{g}"
+                exit_time = _simulate_visitor_session(
                     store_id=store_id,
                     camera_id_entry=cam_entry,
                     camera_id_floor=cam_floor,
@@ -229,7 +234,26 @@ def run_simulation(
                     emitter=emitter,
                     start_time=sim_time,
                     is_staff=is_staff,
+                    visitor_seed=visitor_seed,
                 )
+
+                # Re-entry: 5 % of customers come back within 1-5 minutes
+                # Uses the same visitor_seed → same visitor_id, which the API
+                # session state machine detects as a re-entry (is_reentry=True).
+                if not is_staff and random.random() < _REENTRY_PROB:
+                    reentry_gap = timedelta(seconds=random.uniform(60, 300))
+                    _simulate_visitor_session(
+                        store_id=store_id,
+                        camera_id_entry=cam_entry,
+                        camera_id_floor=cam_floor,
+                        camera_id_billing=cam_billing,
+                        zone_ids=zone_ids,
+                        emitter=emitter,
+                        start_time=exit_time + reentry_gap,
+                        is_staff=False,
+                        visitor_seed=visitor_seed,  # same id → API marks is_reentry=True
+                    )
+
                 visitor_count += 1
 
             # Next visitor arrives 20-120 s later (sim time)

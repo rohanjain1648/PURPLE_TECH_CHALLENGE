@@ -23,7 +23,7 @@ from pipeline.staff_detector import StaffDetector
 from pipeline.zone_mapper import EntryLine, ZoneMapper
 
 LAYOUT_PATH = str(Path(__file__).parent.parent / "data" / "store_layout.json")
-STORE_ID = "STORE_BLR_002"
+STORE_ID = "STORE_PRP_001"   # real store from the actual CCTV footage
 
 
 # ---------------------------------------------------------------------------
@@ -111,9 +111,20 @@ def test_entry_line_no_crossing():
 @pytest.mark.skipif(not Path(LAYOUT_PATH).exists(), reason="layout file not present")
 def test_zone_mapper_loads_layout():
     zm = ZoneMapper(LAYOUT_PATH, STORE_ID, "CAM_FLOOR_01")
-    # Centroid in the middle of the frame should hit a zone
-    zone = zm.zone_at(320, 270)
-    assert zone is not None or zone is None  # just must not crash
+    # CAM_FLOOR_01 has SKINCARE zone covering the right half (x > 960).
+    # A centroid at (1400, 500) must resolve to SKINCARE.
+    zone = zm.zone_at(1400, 500)
+    assert zone is not None, "Centroid at (1400,500) should be in SKINCARE zone"
+    assert zone.zone_id == "SKINCARE"
+
+@pytest.mark.skipif(not Path(LAYOUT_PATH).exists(), reason="layout file not present")
+def test_zone_mapper_entry_line_from_layout():
+    """CAM_ENTRY_01 must have an entry line loaded from store_layout.json."""
+    zm = ZoneMapper(LAYOUT_PATH, STORE_ID, "CAM_ENTRY_01")
+    assert zm.has_entry_line, "Entry camera must have an entry line defined"
+    # Person moving from x=900 (outside) to x=300 (inside) should be ENTRY
+    result = zm.check_entry_crossing(prev_x=900, prev_y=540, curr_x=300, curr_y=540)
+    assert result == "ENTRY", f"Expected ENTRY, got {result}"
 
 
 # ---------------------------------------------------------------------------

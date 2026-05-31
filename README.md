@@ -362,23 +362,40 @@ We treat privacy as a core engineering requirement:
 
 ### **Quick Setup (Docker Recommended)**
 
-Deploy the complete environment (PostgreSQL DB, FastAPI API, event simulator, and Live TUI Dashboard) in just 5 commands:
+Full system — PostgreSQL + API + detection pipeline + live dashboard — in **5 commands**:
 
 ```bash
-# 1. Clone the repository and enter the directory
-git clone https://github.com/rohanjain1648/PURPLE_TECH_CHALLENGE.git && cd PURPLE_TECH_CHALLENGE/store-intelligence
+# 1. Clone the repository
+git clone https://github.com/rohanjain1648/PURPLE_TECH_CHALLENGE.git
+cd PURPLE_TECH_CHALLENGE/store-intelligence
 
-# 2. Copy the default environment configuration
+# 2. Copy environment config
 cp .env.example .env
 
-# 3. Spin up all containerized services
+# 3. Start all services (DB + API + event simulator + dashboard)
 docker compose up --build
+```
 
-# 4. Verify that the API server is healthy
-curl http://localhost:8000/health
+The simulator starts immediately and populates the API with realistic visitor events for `STORE_PRP_001`.
 
-# 5. Connect directly to the Live Terminal Dashboard container
+```bash
+# 4. (Optional) Run the YOLOv8 detection pipeline on the real CCTV clips
+#    Place the provided clips in CCTV Footage/ first, then:
+bash pipeline/run.sh "CCTV Footage" http://localhost:8000
+
+#    Query metrics for the clip recording date (10 April 2026):
+curl "http://localhost:8000/stores/STORE_PRP_001/metrics?date=2026-04-10"
+
+# 5. Attach to the live terminal dashboard
 docker compose attach dashboard
+```
+
+> **Note on CCTV clips:** The clips (`CAM 1.mp4` – `CAM 5.mp4`) are not included in the repository — they are provided separately by the challenge organizers (licence: challenge use only, must not be redistributed). Place them in the `CCTV Footage/` directory before running step 4. Without the clips, `docker compose up` still works fully via the built-in event simulator.
+
+**Verify the API is live:**
+```bash
+curl http://localhost:8000/health
+curl "http://localhost:8000/stores/STORE_PRP_001/metrics?date=2026-04-10"
 ```
 
 ---
@@ -405,11 +422,46 @@ pip install -r requirements-pipeline.txt
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
-#### **4. Run the customer event simulator**
+#### **4a. Run the detection pipeline on the real CCTV footage**
+
+The provided clips are in `CCTV Footage/` and are mapped to camera roles via `data/clips_config.json`:
+
+| File | Camera Role | Zone |
+|---|---|---|
+| `CAM 3.mp4` | `CAM_ENTRY_01` | Entry/Exit threshold (glass door, x≈620 vertical line) |
+| `CAM 1.mp4` | `CAM_FLOOR_01` | Main floor — Skincare section |
+| `CAM 2.mp4` | `CAM_FLOOR_02` | Main floor — Makeup/Cosmetics section |
+| `CAM 5.mp4` | `CAM_BILLING_01` | Billing counter / POS terminal |
+| `CAM 4.mp4` | `CAM_BACK_01` | Stockroom (force `is_staff=True` for all detections) |
+
 ```bash
-# Simulates an entire 8-hour store day in under 15 minutes
+# Install detection dependencies (first time only)
+pip install -r requirements-pipeline.txt
+
+# Run YOLOv8s detection over all 5 clips
+python -m pipeline.detect \
+  --clips-config data/clips_config.json \
+  --clips-dir "CCTV Footage" \
+  --layout data/store_layout.json \
+  --api-url http://localhost:8000 \
+  --output events_STORE_PRP_001.jsonl \
+  --conf 0.35
+
+# Load POS transactions (once per dataset)
+python -m pipeline.load_pos \
+  --csv pos_transactions.csv \
+  --api-url http://localhost:8000
+```
+
+Or use the one-line shell script:
+```bash
+bash pipeline/run.sh "CCTV Footage" http://localhost:8000
+```
+
+#### **4b. Run the customer event simulator** *(no clips needed, for testing)*
+```bash
 python -m pipeline.simulate \
-  --store-id STORE_BLR_002 \
+  --store-id STORE_PRP_001 \
   --layout data/store_layout.json \
   --api-url http://localhost:8000 \
   --visitors 100 \
@@ -418,7 +470,7 @@ python -m pipeline.simulate \
 
 #### **5. Launch the Terminal TUI Dashboard**
 ```bash
-python -m dashboard.terminal_dashboard --store-id STORE_BLR_002 --api-url http://localhost:8000
+python -m dashboard.terminal_dashboard --store-id STORE_PRP_001 --api-url http://localhost:8000
 ```
 
 #### **6. Run the test suite**

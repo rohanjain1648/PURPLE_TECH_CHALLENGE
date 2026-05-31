@@ -235,7 +235,12 @@ async def _apply_event_to_session(evt: EventORM, db: AsyncSession) -> None:
     elif etype == EventType.BILLING_QUEUE_ABANDON.value:
         if session:
             session.queue_abandoned = True
-            session.billing_entry_time = None
+            # Do NOT clear billing_entry_time here.
+            # The detection pipeline emits ABANDON whenever a visitor leaves the
+            # billing zone — it cannot distinguish a paid exit from a real abandon.
+            # POS correlation uses billing_entry_time as its matching anchor; clearing
+            # it would prevent any session from ever being marked converted.
+            # queue_abandoned=True is already the correct flag for "left without buying".
 
     elif etype == EventType.REENTRY.value:
         # Pipeline explicitly detected re-entry; mark existing session

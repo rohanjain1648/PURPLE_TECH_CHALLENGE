@@ -12,7 +12,8 @@ import structlog
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from datetime import date as DateType
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -168,10 +169,14 @@ async def ingest(request: Request, db: AsyncSession = Depends(get_db)) -> Ingest
     response_model=StoreMetrics,
     summary="Real-time store metrics for today",
 )
-async def store_metrics(store_id: str, db: AsyncSession = Depends(get_db)) -> StoreMetrics:
+async def store_metrics(
+    store_id: str,
+    date: DateType = Query(default=None, description="Date to query (YYYY-MM-DD). Defaults to today."),
+    db: AsyncSession = Depends(get_db),
+) -> StoreMetrics:
     structlog.contextvars.bind_contextvars(store_id=store_id)
     try:
-        return await get_store_metrics(store_id, db)
+        return await get_store_metrics(store_id, db, target_date=date)
     except Exception as exc:
         logger.error("metrics_failed", store_id=store_id, error=str(exc))
         raise HTTPException(
@@ -185,10 +190,14 @@ async def store_metrics(store_id: str, db: AsyncSession = Depends(get_db)) -> St
     response_model=FunnelResponse,
     summary="Conversion funnel: Entry → Zone → Billing → Purchase",
 )
-async def store_funnel(store_id: str, db: AsyncSession = Depends(get_db)) -> FunnelResponse:
+async def store_funnel(
+    store_id: str,
+    date: DateType = Query(default=None, description="Date to query (YYYY-MM-DD). Defaults to today."),
+    db: AsyncSession = Depends(get_db),
+) -> FunnelResponse:
     structlog.contextvars.bind_contextvars(store_id=store_id)
     try:
-        return await get_funnel(store_id, db)
+        return await get_funnel(store_id, db, target_date=date)
     except Exception as exc:
         logger.error("funnel_failed", store_id=store_id, error=str(exc))
         raise HTTPException(status_code=503, detail=ErrorDetail(code="DB_UNAVAILABLE", message="Storage unavailable").model_dump())
@@ -199,10 +208,14 @@ async def store_funnel(store_id: str, db: AsyncSession = Depends(get_db)) -> Fun
     response_model=HeatmapResponse,
     summary="Zone visit frequency and dwell heatmap (0-100 normalized)",
 )
-async def store_heatmap(store_id: str, db: AsyncSession = Depends(get_db)) -> HeatmapResponse:
+async def store_heatmap(
+    store_id: str,
+    date: DateType = Query(default=None, description="Date to query (YYYY-MM-DD). Defaults to today."),
+    db: AsyncSession = Depends(get_db),
+) -> HeatmapResponse:
     structlog.contextvars.bind_contextvars(store_id=store_id)
     try:
-        return await get_heatmap(store_id, db)
+        return await get_heatmap(store_id, db, target_date=date)
     except Exception as exc:
         logger.error("heatmap_failed", store_id=store_id, error=str(exc))
         raise HTTPException(status_code=503, detail=ErrorDetail(code="DB_UNAVAILABLE", message="Storage unavailable").model_dump())

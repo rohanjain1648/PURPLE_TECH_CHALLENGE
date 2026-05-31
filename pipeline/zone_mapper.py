@@ -29,6 +29,7 @@ class Zone:
     sku_zone: Optional[str]
     polygon_pts: list[tuple[float, float]]
     is_billing: bool = False
+    is_staff_zone: bool = False   # True → every detected person classified as staff
     _polygon: object = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):
@@ -106,6 +107,7 @@ class ZoneMapper:
                 sku_zone=z.get("sku_zone"),
                 polygon_pts=pts,
                 is_billing=z.get("is_billing", False),
+                is_staff_zone=z.get("is_staff_zone", False),
             )
             self._zones.append(zone)
 
@@ -115,7 +117,7 @@ class ZoneMapper:
                 self._entry_line = EntryLine(
                     p1=tuple(el["p1"]),
                     p2=tuple(el["p2"]),
-                    inside_sign=1,
+                    inside_sign=int(el.get("inside_sign", 1)),
                 )
 
         logger.info(
