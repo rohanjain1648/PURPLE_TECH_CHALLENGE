@@ -5,6 +5,10 @@
 [![Tech Stack](https://img.shields.io/badge/Stack-FastAPI%20%7C%20PostgreSQL%20%7C%20YOLOv8%20%7C%20Rich-blue)](https://github.com/rohanjain1648/PURPLE_TECH_CHALLENGE)
 [![Test Suite](https://img.shields.io/badge/Tests-Pytest%20%3E70%25%20Coverage-green)](pytest.ini)
 [![Deployment](https://img.shields.io/badge/Deployment-Docker%20Orchestrated-violet)](docker-compose.yml)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Railway-black)](https://purpletechchallenge-production.up.railway.app/dashboard/?store=STORE_BLR_002)
+[![NotebookLM](https://img.shields.io/badge/NotebookLM-Research%20Notes-blue)](https://notebooklm.google.com/notebook/0484ab22-c982-4ebf-bfa8-ec171b12f3a5)
+
+> 🌐 **[Live Dashboard](https://purpletechchallenge-production.up.railway.app/dashboard/?store=STORE_BLR_002)** · 📖 **[API Docs](https://purpletechchallenge-production.up.railway.app/docs)** · 🔬 **[NotebookLM Research Notes](https://notebooklm.google.com/notebook/0484ab22-c982-4ebf-bfa8-ec171b12f3a5)**
 
 The **Store Intelligence System** is an enterprise-grade, edge-to-cloud analytical platform that transforms raw security CCTV footage into real-time retail intelligence. By processing video feeds at the edge, stitching spatial events into logical customer shopping journeys, and correlating physical movements with point-of-sale (POS) data, it opens up the offline retail "black box" to compute the ultimate retail North Star: **Offline Store Conversion Rate**.
 
