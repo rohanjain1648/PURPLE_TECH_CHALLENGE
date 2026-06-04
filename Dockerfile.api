@@ -18,6 +18,9 @@ ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
-# Use shell form so ${PORT:-8000} expands correctly.
-# Railway injects $PORT at runtime; local docker uses the default 8000.
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
+# exec form runs the shell script explicitly — Railway's $PORT is reliably
+# expanded inside the script. Falls back to 8000 for local docker-compose.
+CMD ["/app/start.sh"]
