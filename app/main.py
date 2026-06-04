@@ -15,6 +15,7 @@ from typing import AsyncGenerator
 from datetime import date as DateType
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -69,6 +70,12 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Serve the web dashboard at /dashboard/ (html=True auto-serves index.html)
+import os as _os
+_dash_dir = _os.path.join(_os.path.dirname(__file__), "..", "dashboard")
+if _os.path.isdir(_dash_dir):
+    app.mount("/dashboard", StaticFiles(directory=_dash_dir, html=True), name="dashboard")
 
 
 # ---------------------------------------------------------------------------

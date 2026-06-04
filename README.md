@@ -362,7 +362,52 @@ The session state machine maintains the operational state of the store. When raw
 
 ---
 
-## 9. Tech Stack
+## 9. Live Demo & Deployment
+
+### Live Web Dashboard
+
+Once deployed, the web dashboard is accessible at:
+
+```
+https://<your-railway-app>.up.railway.app/dashboard/?store=STORE_BLR_002
+```
+
+The dashboard polls the API every 2 seconds and shows:
+- **Live Metrics** — unique visitors, conversion rate gauge, queue depth, abandonment rate
+- **Conversion Funnel** — horizontal bar chart updating in real time
+- **Zone Heatmap** — colour-coded grid (green → yellow → red by visit frequency)
+- **Active Anomalies** — INFO / WARN / CRITICAL badges with suggested actions
+
+Switch stores via URL param: `?store=STORE_PRP_001`
+
+Swagger UI: `https://<your-railway-app>.up.railway.app/docs`
+
+---
+
+### Deploy to Railway (shareable public URL in ~10 minutes)
+
+1. **Push to GitHub** — ensure `railway.json` is in the repo root
+2. **Create a Railway project** at [railway.app](https://railway.app) → **New Project → Deploy from GitHub repo**
+3. **Add PostgreSQL plugin** — Railway injects `DATABASE_URL` automatically
+4. **Set environment variables** in Railway dashboard:
+   ```
+   DATABASE_URL   = <auto-set by Railway PostgreSQL plugin>
+   DEBUG          = false
+   ```
+5. **Deploy** — Railway builds `Dockerfile.api`, starts the API, and gives you a public URL
+6. **Seed live data** — in Railway's shell tab or locally:
+   ```bash
+   # Load Brigade Road real POS data against the live URL
+   python -m pipeline.load_brigade_pos \
+     --csv "Brigade_Bangalore_10_April_26.csv" \
+     --api-url https://<your-railway-app>.up.railway.app
+   ```
+
+> **Note:** The pipeline simulator (Dockerfile.pipeline) runs in `--live --speed 2` mode — it continuously generates visitor events so the dashboard metrics always update. Railway's free tier provides enough resources to run the API + PostgreSQL. The pipeline can be run locally pointing at the Railway URL.
+
+---
+
+## 9b. Tech Stack
 
 | Technology Layer | Component | Purpose |
 |---|---|---|

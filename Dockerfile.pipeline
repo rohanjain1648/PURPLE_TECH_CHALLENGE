@@ -17,10 +17,12 @@ COPY data/ ./data/
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Default: run the simulator (swap CMD to detect.py for real clips)
+# Default: run simulator in continuous live mode so the web dashboard always
+# has fresh data. --live generates ~1 visitor every 30s at 2x real-time.
+# Swap CMD to detect.py for real CCTV clips (see README).
 CMD ["python", "-m", "pipeline.simulate", \
      "--store-id", "STORE_BLR_002", \
      "--layout", "data/store_layout.json", \
      "--api-url", "http://api:8000", \
-     "--visitors", "200", \
-     "--speed", "30"]
+     "--live", \
+     "--speed", "2"]
